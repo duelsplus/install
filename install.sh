@@ -1,147 +1,92 @@
 #!/usr/bin/env bash
-# https://github.com/duelsplus/install
-
 set -euo pipefail
 
-INSTALL_DIR="$HOME/.local/share/duelsplus"
-BIN_DIR="$HOME/.local/bin"
-BIN_PATH="$BIN_DIR/duelsplus"
-DESKTOP_FILE="$HOME/.local/share/applications/duelsplus.desktop"
-VERSION_API="https://duelsplus.com/api/launcher/version"
-LOG_FILE="$HOME/.cache/duelsplus-install.log"
-# --- colors ---
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-CYAN="\033[0;36m"
-DARK_GRAY="\033[90m"
-NC="\033[0m"
-# --- very wonderful ASCII banner ---
-if [ "$(tput colors 2>/dev/null || echo 0)" -ge 256 ]; then
-    BRAND_RED="\033[38;2;255;85;85m"  ##FF5555
-else
-    BRAND_RED="\033[0;31m"            #light red
-fi
-echo -e "${BRAND_RED}"
-cat <<'EOF'
- _______                       __                     
-|       \                     |  \              __    
-| $$$$$$$\ __    __   ______  | $$  _______    |  \   
-| $$  | $$|  \  |  \ /      \ | $$ /       \ __| $$__ 
-| $$  | $$| $$  | $$|  $$$$$$\| $$|  $$$$$$$|    $$  \
-| $$  | $$| $$  | $$| $$    $$| $$ \$$    \  \$$$$$$$$
-| $$__/ $$| $$__/ $$| $$$$$$$$| $$ _\$$$$$$\   | $$   
-| $$    $$ \$$    $$ \$$     \| $$|       $$    \$$   
- \$$$$$$$   \$$$$$$   \$$$$$$$ \$$ \$$$$$$$                               
-EOF
-echo -e "${NC}"
-echo -e "${DARK_GRAY}Logs saved to: $LOG_FILE${NC}"
-mkdir -p "$(dirname "$LOG_FILE")"
-# --- check for root ---
+action=${1:-install}
+
 if [ "$(id -u)" -eq 0 ]; then
-    echo -e "${RED}⚠️  Do not run this installer as root.${NC}"
-    echo "This script installs Duels+ under your user account."
-    echo "Please re-run it as a normal user."
+    echo "Run me as normal user, not root!"
     exit 1
 fi
-# --- check for existing installation ---
-if command -v duelsplus >/dev/null 2>&1; then
-    EXISTING_PATH=$(command -v duelsplus)
-    if [[ "$EXISTING_PATH" == "/usr/bin/"* ]] || [[ "$EXISTING_PATH" == "/usr/local/bin/"* ]]; then
-        echo -e "${YELLOW}⚠️  A system-wide installation of Duels+ was found at:${NC} $EXISTING_PATH"
-        echo "It's likely installed via a package manager."
-        read -rp "Do you still want to proceed? (y/N): " choice
-        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
-            echo "Installation cancelled."
-            exit 0
-        fi
-    elif [[ "$EXISTING_PATH" == "$BIN_PATH" ]]; then
-        echo -e "${YELLOW}⚠️  Duels+ is already installed in your user directory.${NC}"
-        read -rp "Do you still want to proceed? (y/N): " choice
-        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
-            echo "Installation cancelled."
-            exit 0
-        fi
-    fi
-fi
-# --- check dependencnies ---
-for cmd in curl jq unzip; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Installing missing dependency: $cmd${NC}"
-        if command -v apt >/dev/null 2>&1; then
-            sudo apt update -y && sudo apt install -y "$cmd"
-        elif command -v dnf >/dev/null 2>&1; then
-            sudo dnf install -y "$cmd"
-        elif command -v pacman >/dev/null 2>&1; then
-            sudo pacman -Sy --noconfirm "$cmd"
-        elif command -v zypper >/dev/null 2>&1; then
-            sudo zypper install -y "$cmd"
-        else
-            echo -e "${RED}Unsupported package manager. Please install curl, jq, and unzip manually.${NC}"
-            exit 1
-        fi
-    fi
-done
-# --- check fuse2 ---
-#if ! ldconfig -p 2>/dev/null | grep -q "libfuse.so.2"; then
-#    if command -v apt >/dev/null 2>&1; then
-#        sudo apt install -y libfuse2
-#    elif command -v dnf >/dev/null 2>&1; then
-#        sudo dnf install -y fuse
-#    elif command -v pacman >/dev/null 2>&1; then
-#        sudo pacman -Sy --noconfirm fuse2
-#    elif command -v zypper >/dev/null 2>&1; then
-#        sudo zypper install -y fuse
-#    else
-#        echo -e "${RED}Could not automatically install FUSE2. Please install libfuse2 (or fuse2, depending on your distribution) manually.${NC}"
-#        exit 1
-#    fi
-#fi
-# --- fetch versioning ---
-VERSION_JSON=$(curl -sSL "$VERSION_API")
-LATEST_VERSION=$(echo "$VERSION_JSON" | jq -r '.version')
-DOWNLOAD_URL=$(echo "$VERSION_JSON" | jq -r '.platforms[] | select(.platform=="Linux") | .downloadUrl')
-FILENAME=$(basename "$DOWNLOAD_URL" | sed 's/%2B/+/g')
-if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-    echo -e "${RED}No Linux release available right now.${NC}"
+
+if grep -q "CHROMEOS_RELEASE_NAME" /etc/lsb-release 2>/dev/null; then
+    echo "ChromeOS is not supported!"
     exit 1
 fi
-# --- download + install ---
-mkdir -p "$INSTALL_DIR"
-echo -e "${YELLOW}Downloading Duels+ Launcher v$LATEST_VERSION...${NC}"
-curl -# -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/$FILENAME" 2>&1 | tee -a "$LOG_FILE"
-echo
-chmod +x "$INSTALL_DIR/$FILENAME"
-# --- create binary wrapper ---
-mkdir -p "$BIN_DIR"
-cat > "$BIN_PATH" <<EOF
-#!/usr/bin/env bash
-exec "$INSTALL_DIR/$FILENAME" "\$@"
-EOF
-chmod +x "$BIN_PATH"
-# --- check for ~/.local/bin in PATH ---
+
+command -v curl >/dev/null || { echo "curl is required"; exit 1; }
+command -v jq >/dev/null || { echo "jq is required"; exit 1; }
+command -v sha256sum >/dev/null || { echo "sha256sum is required"; exit 1; }
+command -v tar >/dev/null || command -v unzip >/dev/null || { echo "tar or unzip is required"; exit 1; }
+
+BIN="$HOME/.local/bin/duelsplus"
+INSTALL_DIR="$HOME/.local/share/duelsplus"
+TMP="$INSTALL_DIR/tmp"
+
+if [ "$action" = uninstall ]; then
+    if [ -f "$BIN" ]; then
+        rm -f "$BIN"
+        rm -rf "$INSTALL_DIR"
+        echo "Duels+ CLI uninstalled."
+    else
+        echo "Duels+ CLI is not installed."
+    fi
+    exit 0
+fi
+
+if command -v duelsplus >/dev/null 2>&1 || alias duelsplus >/dev/null 2>&1; then
+    echo "'duelsplus' already exists in your PATH."
+    read -p "Do you want to continue and overwrite? (y/N) " confirm
+    case "$confirm" in
+        [yY]*) echo "Proceeding..." ;;
+        *) echo "Installation cancelled!"; exit 0 ;;
+    esac
+fi
+
+platform="$(uname -s) $(uname -m)"
+case "$platform" in
+  'Darwin x86_64') target=darwin-x64 ;;
+  'Darwin arm64') target=darwin-arm64 ;;
+  'Linux aarch64'|'Linux arm64') target=linux-arm64 ;;
+  'Linux x86_64'*) target=linux-x64 ;;
+  *) echo "Unsupported platform: $platform"; exit 1 ;;
+esac
+
+release_json=$(curl -sSL https://api.github.com/repos/duelsplus/cli/releases/latest)
+version=$(echo "$release_json" | jq -r --arg t "$target" '.tag_name')
+url=$(echo "$release_json" | jq -r --arg t "$target" '.assets[] | select(.name | test($t)) | .browser_download_url')
+digest=$(echo "$release_json" | jq -r --arg t "$target" '.assets[] | select(.name | test($t)) | .digest')
+
+[ -z "$url" ] && { echo "No release available for $target"; exit 1; }
+
+mkdir -p "$HOME/.local/bin" "$TMP"
+echo "Downloading Duels+ CLI $version..."
+archive="$TMP/duelsplus.tar.gz"
+curl --fail --location --progress-bar --output "$archive" "$url" || {
+    echo "Failed to download CLI from $url"
+    exit 1
+}
+
+echo "Validating checksum..."
+computed=$(sha256sum "$archive" | awk '{print $1}')
+expected=${digest#sha256:}
+
+if [ "$computed" != "$expected" ]; then
+    echo "Checksum mismatch!"
+    exit 1
+fi
+
+rm -f "$BIN"
+tar -xf "$archive" -C "$TMP" || { echo "Failed to extract"; exit 1; }
+binary=$(find "$TMP" -type f -name "duelsplus-*" -perm /111 | head -n1)
+[ -z "$binary" ] && { echo "Failed to locate binary"; exit 1; }
+
+mv "$binary" "$BIN" || { echo "Failed to move binary"; exit 1; }
+chmod +x "$BIN"
+rm -rf "$TMP"
+
 if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-    echo -e "${YELLOW}⚠️  ~/.local/bin is not in your PATH.${NC}"
-    echo "Add this line to your shell config to enable 'duelsplus' globally:"
-    echo -e "${CYAN}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
-    echo
+    echo "Add $HOME/.local/bin to your PATH by adding this line to your shell config:"
+    echo 'export PATH="$HOME/.local/bin:$PATH"'
 fi
-# --- create desktop entry ---
-mkdir -p "$(dirname "$DESKTOP_FILE")"
-cat > "$DESKTOP_FILE" <<EOF
-[Desktop Entry]
-Name=Duels+
-Exec=$BIN_PATH
-Icon=$INSTALL_DIR/$FILENAME
-Terminal=false
-Type=Application
-Categories=Game;Utility;
-Comment=Lightweight, custom Minecraft Proxy designed to enhance your experience on Hypixel Duels.
-EOF
-# --- update desktop database (!) ---
-if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
-fi
-echo -e "${GREEN}✔ Duels+ Launcher v$LATEST_VERSION installed successfully.${NC}"
-echo -e "Launch it from your application menu or run: ${CYAN}duelsplus${NC}"
-echo
+
+echo "Duels+ CLI installed to $BIN"
