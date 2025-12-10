@@ -77,7 +77,7 @@ fi
 
 rm -f "$BIN"
 tar -xf "$archive" -C "$TMP" || { echo "Failed to extract"; exit 1; }
-binary=$(find "$TMP" -type f -name "duelsplus-*" -perm /111 | head -n1)
+binary=$(find "$TMP" -type f -name "duelsplus-*" \( -perm -u=x -o -perm -g=x -o -perm -o=x \) | head -n1)
 [ -z "$binary" ] && { echo "Failed to locate binary"; exit 1; }
 
 mv "$binary" "$BIN" || { echo "Failed to move binary"; exit 1; }
