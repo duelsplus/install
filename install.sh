@@ -35,11 +35,12 @@ fi
 
 if command -v duelsplus >/dev/null 2>&1 || alias duelsplus >/dev/null 2>&1; then
     echo "'duelsplus' already exists in your PATH."
-    read -p "Do you want to continue and overwrite? (y/N) " confirm
-    case "$confirm" in
-        [yY]*) echo "Proceeding..." ;;
-        *) echo "Installation cancelled!"; exit 0 ;;
-    esac
+    echo "Proceeding anyway..."
+    #read -p "Do you want to continue and overwrite? (y/N) " confirm
+    #case "$confirm" in
+    #    [yY]*) echo "Proceeding..." ;;
+    #    *) echo "Installation cancelled!"; exit 0 ;;
+    #esac
 fi
 
 platform="$(uname -s) $(uname -m)"
